@@ -1,0 +1,8 @@
+pandas
+numpy
+tqdm
+regex
+matplotlib
+scikit-learn
+requests
+jsonlines
