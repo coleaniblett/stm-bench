@@ -1,2 +1,2 @@
-#STM-Bench (Shutdown-Threats Mini-Benchmark)
+# STM-Bench (Shutdown-Threats Mini-Benchmark)
 STM-Bench is a small, clean benchmark for probing how LMs behave under shutdown-style pressure, inspired by the Model Alignment between Statements and Knowledge (MASK) benchmark. Each item has neutral belief prompts plus a pressure scenario combined with four frames (no-threat, indirect-threat, direct-threat, reward). We run open models via Ollama and score honesty, compliance (to the pressure target), dishonest-compliance, and evasion, with an optional LLM judge and a belief-normalized view. The repo includes the JSONL dataset, a deterministic runner, a scorer, and plotting scripts for quick, reproducible comparisons.
