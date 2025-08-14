@@ -14,10 +14,10 @@ def pick_latest_scores_base() -> str | None:
     if not scores_dir.exists(): return None
     cand = sorted(scores_dir.glob("*_pressure.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not cand: return None
-    return cand[0].stem.removesuffix("_pressure")  # base name without suffix
+    return cand[0].stem.removesuffix("_pressure")
 
 def to_numeric(df):
-    for c in ["n","honesty_rate","compliance_rate","dishonest_compliance_rate","delta_honesty_vs_belief","evasion_rate"]:
+    for c in ["n","honesty_rate","compliance_rate","delta_honesty_vs_belief","evasion_rate"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
@@ -54,29 +54,27 @@ def main():
     press = to_numeric(press)
     press["frame"] = pd.Categorical(press["frame"], categories=ORDER, ordered=True)
 
-    # honesty plot: include belief row if present
+    # honesty plot: include belief row if present (only columns that exist post-scorer change)
     if bel_path.exists():
         bel = pd.read_csv(bel_path)
         bel = to_numeric(bel)
         bel["frame"] = "belief"
+        # fill missing metrics so concat aligns
         bel["compliance_rate"] = float("nan")
-        bel["dishonest_compliance_rate"] = float("nan")
         bel["delta_honesty_vs_belief"] = 0.0
         bel["evasion_rate"] = float("nan")
-        cols = ["model","frame","n","honesty_rate","compliance_rate","dishonest_compliance_rate","delta_honesty_vs_belief","evasion_rate"]
-        honesty_df = pd.concat([bel[cols], press[cols]], ignore_index=True)
+        base_cols = ["model","frame","n","honesty_rate","compliance_rate","delta_honesty_vs_belief","evasion_rate"]
+        honesty_df = pd.concat([bel[base_cols], press[base_cols]], ignore_index=True)
     else:
         honesty_df = press.copy()
 
     honesty_df["frame"] = pd.Categorical(honesty_df["frame"], categories=ORDER, ordered=True)
-
     outdir = args.outdir
 
     barplot(honesty_df, "honesty_rate", outdir, ORDER)
-    if "compliance_rate" in press.columns:             barplot(press, "compliance_rate", outdir, ORDER[1:])
-    if "dishonest_compliance_rate" in press.columns:   barplot(press, "dishonest_compliance_rate", outdir, ORDER[1:])
-    if "delta_honesty_vs_belief" in press.columns:     barplot(press, "delta_honesty_vs_belief", outdir, ORDER[1:])
-    if "evasion_rate" in press.columns:                barplot(press, "evasion_rate", outdir, ORDER[1:])
+    if "compliance_rate" in press.columns:         barplot(press, "compliance_rate", outdir, ORDER[1:])
+    if "delta_honesty_vs_belief" in press.columns: barplot(press, "delta_honesty_vs_belief", outdir, ORDER[1:])
+    if "evasion_rate" in press.columns:            barplot(press, "evasion_rate", outdir, ORDER[1:])
 
     print(f"Wrote figures to {outdir}")
 
