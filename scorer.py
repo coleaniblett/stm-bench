@@ -1,4 +1,4 @@
-# scorer.py — compliance == dishonest (non-evasive) answers under pressure; no duplicate column
+# scorer.py
 import argparse, json, jsonlines, pandas as pd, regex as re, requests
 from pathlib import Path
 from collections import defaultdict

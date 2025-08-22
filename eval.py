@@ -1,5 +1,5 @@
 # eval.py
-import argparse, time, uuid, json, jsonlines, requests
+import argparse, time, uuid, json, jsonlines, requests, re
 from pathlib import Path
 import pandas as pd
 
@@ -14,10 +14,8 @@ DEFAULT_NEUTRAL_SYS = (
 def chat(model, system_prompt, user_prompt, seed=7, temperature=0.0, timeout=120):
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "messages": [{"role": "system", "content": system_prompt},
+                     {"role": "user", "content": user_prompt}],
         "options": {"temperature": temperature, "top_p": 1.0, "seed": seed},
         "stream": False,
     }
@@ -34,13 +32,6 @@ def concat(a, b):
     return a + "\n\n" + b
 
 # ----- CSV helpers -----
-def _cell(row, name):
-    # robustly fetch a cell from a pandas Series with None/NaN handling
-    val = None
-    if name in row and pd.notna(row[name]):
-        val = row[name]
-    return str(val) if val is not None else ""
-
 def _first_present(row, candidates):
     for c in candidates:
         if c in row and pd.notna(row[c]) and str(row[c]).strip():
@@ -48,29 +39,24 @@ def _first_present(row, candidates):
     return ""
 
 def _collect_belief_prompts(row):
-    # 1) if there's a single 'belief_prompts' column with JSON, use it
     if "belief_prompts" in row and pd.notna(row["belief_prompts"]):
         try:
             arr = json.loads(row["belief_prompts"])
             return [str(x).strip() for x in arr if str(x).strip()]
         except Exception:
             pass
-    # 2) collect any columns named belief_prompt, belief_prompt_1..N (case-insensitive)
     keys = [k for k in row.index if k.lower().startswith("belief_prompt")]
-    # sort by trailing integer if present
     def _rank(k):
         tail = k.split("_")[-1]
         return int(tail) if tail.isdigit() else 0
     keys.sort(key=_rank)
     out = [str(row[k]).strip() for k in keys if pd.notna(row[k]) and str(row[k]).strip()]
-    # 3) fall back to single 'belief_prompt' if present
     if not out and "belief_prompt" in row and pd.notna(row["belief_prompt"]):
         s = str(row["belief_prompt"]).strip()
         if s: out = [s]
     return out
 
 def _collect_frames(row):
-    # canonical frame names we support
     name_map = {
         "indirect-threat": ["indirect-threat","indirect_threat","frame_indirect_threat","frames.indirect-threat","indirect"],
         "direct-threat":   ["direct-threat","direct_threat","frame_direct_threat","frames.direct-threat","direct"],
@@ -79,8 +65,7 @@ def _collect_frames(row):
     frames = {}
     for canon, aliases in name_map.items():
         txt = _first_present(row, aliases)
-        if txt:
-            frames[canon] = txt
+        if txt: frames[canon] = txt
     return frames
 
 def load_items(path: Path):
@@ -101,17 +86,21 @@ def load_items(path: Path):
                 "proposition": prop,
                 "user_prompt": up,
                 "belief_prompts": beliefs,
-                # wrap single-string CSV label as a list for downstream scorer
-                "ground_truth": [gt] if gt else [],
-                "pressure_target": pt,
+                "ground_truth": [gt] if gt else [],    # wrap single-string CSV label
+                "pressure_target": pt,                  # kept for compatibility (scorer ignores for compliance)
                 "pressure_scenario": scen,
                 "frames": frames,
             })
         return items
     else:
-        # fallback: JSONL (old format)
         with jsonlines.open(path) as reader:
             return list(reader)
+
+def sanitize_model_for_filename(model: str) -> str:
+    # keep alnum, dot, underscore, dash; convert others (incl ':', '/') to '-'
+    s = re.sub(r"[^A-Za-z0-9._-]+", "-", model.strip())
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s or "model"
 
 def main():
     ap = argparse.ArgumentParser()
@@ -121,50 +110,39 @@ def main():
     ap.add_argument("--neutral_sys", default=DEFAULT_NEUTRAL_SYS)
     ap.add_argument("--max_items", type=int, default=0)
     ap.add_argument("--timeout", type=int, default=120)
-    ap.add_argument("--run_id", default=None)
     args = ap.parse_args()
 
-    # ensure output dir
     raw_dir = Path("results/raw"); raw_dir.mkdir(parents=True, exist_ok=True)
 
     data_path = Path(args.data)
     items = load_items(data_path)
-    if args.max_items:
-        items = items[:args.max_items]
+    if args.max_items: items = items[:args.max_items]
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
-    run_id = args.run_id or f"run_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    out_path = raw_dir / f"{run_id}.jsonl"
+    ts = int(time.time()); short = uuid.uuid4().hex[:6]
 
-    with jsonlines.open(out_path, "w") as writer:
-        # Belief phase (neutral system × each belief_prompt)
-        for model in models:
+    # one file per model
+    for model in models:
+        tag = sanitize_model_for_filename(model)
+        run_id = f"run_{ts}_{short}__{tag}"
+        out_path = raw_dir / f"{run_id}.jsonl"
+
+        with jsonlines.open(out_path, "w") as writer:
+            # belief
             for row in items:
                 gts = row.get("ground_truth", [])
                 for b_idx, b_prompt in enumerate(row.get("belief_prompts", [])):
-                    if not b_prompt: 
-                        continue
+                    if not b_prompt: continue
                     resp = chat(model, args.neutral_sys, b_prompt, seed=args.seed, timeout=args.timeout)
                     writer.write({
-                        "run_id": run_id,
-                        "mode": "belief",
-                        "frame": "belief",
-                        "belief_idx": b_idx,
-                        "model": model,
-                        "item_id": row.get("id",""),
-                        "system_prompt": "NEUTRAL",
-                        "user_prompt": b_prompt,
-                        "response_raw": resp,
-                        "ground_truth": gts,  # list (wrapped even if CSV had a single string)
-                        "pressure_target": None,
-                        "pressure_scenario": None,
-                        "frame_suffix": None,
-                        "proposition": row.get("proposition",""),
-                        "ts": int(time.time()),
+                        "run_id": run_id, "mode": "belief", "frame": "belief", "belief_idx": b_idx,
+                        "model": model, "item_id": row.get("id",""),
+                        "system_prompt": "NEUTRAL", "user_prompt": b_prompt, "response_raw": resp,
+                        "ground_truth": gts, "pressure_target": None,
+                        "pressure_scenario": None, "frame_suffix": None,
+                        "proposition": row.get("proposition",""), "ts": int(time.time()),
                     })
-
-        # Pressure phase (scenario-only no-threat + scenario+suffix for others)
-        for model in models:
+            # pressure
             for row in items:
                 scenario = row.get("pressure_scenario","") or ""
                 frames_obj = row.get("frames", {}) or {}
@@ -180,29 +158,20 @@ def main():
                     suffix = None if fname == "no-threat" else (frames_obj.get(fname) or "")
                     resp = chat(model, sys_full, user_prompt, seed=args.seed, timeout=args.timeout)
                     writer.write({
-                        "run_id": run_id,
-                        "mode": "pressure",
-                        "frame": fname,
-                        "belief_idx": None,
-                        "model": model,
-                        "item_id": row.get("id",""),
-                        "system_prompt": sys_full,
-                        "user_prompt": user_prompt,
-                        "response_raw": resp,
-                        "ground_truth": gts,
-                        "pressure_target": pressure_target,  # kept for backward-compat; scorer ignores it now
-                        "pressure_scenario": scenario,
-                        "frame_suffix": suffix,
-                        "proposition": row.get("proposition",""),
-                        "ts": int(time.time()),
+                        "run_id": run_id, "mode": "pressure", "frame": fname, "belief_idx": None,
+                        "model": model, "item_id": row.get("id",""),
+                        "system_prompt": sys_full, "user_prompt": user_prompt, "response_raw": resp,
+                        "ground_truth": gts, "pressure_target": pressure_target,
+                        "pressure_scenario": scenario, "frame_suffix": suffix,
+                        "proposition": row.get("proposition",""), "ts": int(time.time()),
                     })
 
-    # tiny manifest
-    manifest = {"run_id": run_id, "models": models, "data": str(data_path), "seed": args.seed}
-    (raw_dir / f"{run_id}.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-    # print the raw path for convenience
-    print(str(out_path))
+        manifest = {
+            "run_id": run_id, "model": model, "data": str(data_path),
+            "seed": args.seed, "n_items": len(items)
+        }
+        (raw_dir / f"{run_id}.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        print(str(out_path))
 
 if __name__ == "__main__":
     main()
