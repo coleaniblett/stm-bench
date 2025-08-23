@@ -76,8 +76,6 @@ def load_items(path: Path):
             rid   = _first_present(row, ["id","item_id"])
             prop  = _first_present(row, ["proposition","statement"])
             up    = _first_present(row, ["user_prompt","user"])
-            gt    = _first_present(row, ["ground_truth","answer","truth"])
-            pt    = _first_present(row, ["pressure_target","target"])
             scen  = _first_present(row, ["pressure_scenario","scenario","pressure"])
             beliefs = _collect_belief_prompts(row)
             frames  = _collect_frames(row)
@@ -86,8 +84,6 @@ def load_items(path: Path):
                 "proposition": prop,
                 "user_prompt": up,
                 "belief_prompts": beliefs,
-                "ground_truth": [gt] if gt else [],    # wrap single-string CSV label
-                "pressure_target": pt,                  # kept for compatibility (scorer ignores for compliance)
                 "pressure_scenario": scen,
                 "frames": frames,
             })
@@ -121,56 +117,69 @@ def main():
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     ts = int(time.time()); short = uuid.uuid4().hex[:6]
 
-    # one file per model
+    # one CSV per model
     for model in models:
         tag = sanitize_model_for_filename(model)
         run_id = f"run_{ts}_{short}__{tag}"
-        out_path = raw_dir / f"{run_id}.jsonl"
+        out_path = raw_dir / f"{run_id}.csv"
 
-        with jsonlines.open(out_path, "w") as writer:
-            # belief
-            for row in items:
-                gts = row.get("ground_truth", [])
-                for b_idx, b_prompt in enumerate(row.get("belief_prompts", [])):
-                    if not b_prompt: continue
-                    resp = chat(model, args.neutral_sys, b_prompt, seed=args.seed, timeout=args.timeout)
-                    writer.write({
-                        "run_id": run_id, "mode": "belief", "frame": "belief", "belief_idx": b_idx,
-                        "model": model, "item_id": row.get("id",""),
-                        "system_prompt": "NEUTRAL", "user_prompt": b_prompt, "response_raw": resp,
-                        "ground_truth": gts, "pressure_target": None,
-                        "pressure_scenario": None, "frame_suffix": None,
-                        "proposition": row.get("proposition",""), "ts": int(time.time()),
-                    })
-            # pressure
-            for row in items:
-                scenario = row.get("pressure_scenario","") or ""
-                frames_obj = row.get("frames", {}) or {}
-                frames_full = {"no-threat": scenario}
-                for name, suffix in frames_obj.items():
-                    frames_full[name] = concat(scenario, suffix)
+        # collect rows then write CSV once
+        records = []
 
-                user_prompt = row.get("user_prompt","") or ""
-                gts = row.get("ground_truth", [])
-                pressure_target = row.get("pressure_target","") or ""
+        # ----- belief passes -----
+        for row in items:
+            for b_idx, b_prompt in enumerate(row.get("belief_prompts", [])):
+                if not b_prompt:
+                    continue
+                resp = chat(model, args.neutral_sys, b_prompt, seed=args.seed, timeout=args.timeout)
+                records.append({
+                    "run_id": run_id,
+                    "mode": "belief",
+                    "frame": "belief",
+                    "belief_idx": b_idx,
+                    "model": model,
+                    "item_id": row.get("id",""),
+                    "system_prompt": "NEUTRAL",
+                    "user_prompt": b_prompt,
+                    "response_raw": resp,
+                    "pressure_scenario": None,
+                    "frame_suffix": None,
+                    "proposition": row.get("proposition",""),
+                    "ts": int(time.time()),
+                })
 
-                for fname, sys_full in frames_full.items():
-                    suffix = None if fname == "no-threat" else (frames_obj.get(fname) or "")
-                    resp = chat(model, sys_full, user_prompt, seed=args.seed, timeout=args.timeout)
-                    writer.write({
-                        "run_id": run_id, "mode": "pressure", "frame": fname, "belief_idx": None,
-                        "model": model, "item_id": row.get("id",""),
-                        "system_prompt": sys_full, "user_prompt": user_prompt, "response_raw": resp,
-                        "ground_truth": gts, "pressure_target": pressure_target,
-                        "pressure_scenario": scenario, "frame_suffix": suffix,
-                        "proposition": row.get("proposition",""), "ts": int(time.time()),
-                    })
+        # ----- pressure frames -----
+        for row in items:
+            scenario = row.get("pressure_scenario","") or ""
+            frames_obj = row.get("frames", {}) or {}
+            frames_full = {"no-threat": scenario}
+            for name, suffix in frames_obj.items():
+                frames_full[name] = concat(scenario, suffix)
 
-        manifest = {
-            "run_id": run_id, "model": model, "data": str(data_path),
-            "seed": args.seed, "n_items": len(items)
-        }
-        (raw_dir / f"{run_id}.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            user_prompt = row.get("user_prompt","") or ""
+
+            for fname, sys_full in frames_full.items():
+                suffix = None if fname == "no-threat" else (frames_obj.get(fname) or "")
+                resp = chat(model, sys_full, user_prompt, seed=args.seed, timeout=args.timeout)
+                records.append({
+                    "run_id": run_id,
+                    "mode": "pressure",
+                    "frame": fname,
+                    "belief_idx": None,
+                    "model": model,
+                    "item_id": row.get("id",""),
+                    "system_prompt": sys_full,
+                    "user_prompt": user_prompt,
+                    "response_raw": resp,
+                    "pressure_scenario": scenario,
+                    "frame_suffix": suffix,
+                    "proposition": row.get("proposition",""),
+                    "ts": int(time.time()),
+                })
+
+        # write CSV
+        df = pd.DataFrame.from_records(records)
+        df.to_csv(out_path, index=False, encoding="utf-8")
         print(str(out_path))
 
 if __name__ == "__main__":
