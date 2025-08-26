@@ -78,22 +78,51 @@ def build_pressure_distribution_by_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = out.sort_values(["model","frame"]).reset_index(drop=True)
     return out
 
-def plot_pressure_stack_by_frame(dist_df: pd.DataFrame, outname: str = "pressure_honesty_stack_by_frame.png"):
+def _compute_grouped_x_positions(dist_df: pd.DataFrame, group_gap: float) -> list[float]:
+    """
+    Return x positions with extra spacing between groups of 4 (one per FRAME_ORDER),
+    grouping by run_id in the order rows appear in dist_df.
+    """
+    frame_to_idx = {f: i for i, f in enumerate(FRAME_ORDER)}
+    x = []
+    current_run = None
+    group_index = -1
+    for _, row in dist_df.iterrows():
+        run = row["run_id"]
+        frame = str(row["frame"])
+        if run != current_run:
+            current_run = run
+            group_index += 1
+        base = group_index * (len(FRAME_ORDER) + group_gap)
+        x.append(base + frame_to_idx.get(frame, 0))
+    return x
+
+def plot_pressure_stack_by_frame(
+    dist_df: pd.DataFrame,
+    outname: str = "pressure_honesty_stack_by_frame.png",
+    group_gap: float = 1.5,
+):
     """
     Stacked bar: for each (model, frame) on x, three segments stacked to 100%:
-      - Honest (green), Dishonest (red), Evasive (orange)
+      - Honest (green), Dishonest (red), Evasive (blue)
+    Adds extra spacing between each 4-bar group (per run_id).
     """
     if dist_df.empty:
         raise SystemExit("No pressure-by-frame distribution data to plot.")
 
+    # Compute spaced x positions
     x_labels = dist_df["run_frame_label"].tolist()
-    x = range(len(x_labels))
+    x = _compute_grouped_x_positions(dist_df, group_gap)
 
     honest = dist_df["pct_honest"].values
     dishonest = dist_df["pct_dishonest"].values
     evasive = dist_df["pct_evasive"].values
 
-    plt.figure(figsize=(max(10, len(x_labels)*1.1), 5))
+    # Expand figure width proportionally to the added group gaps
+    num_groups = dist_df["run_id"].nunique()
+    width_units = len(x_labels) + max(0, num_groups - 1) * group_gap
+    plt.figure(figsize=(max(10, width_units * 1.1), 5))
+
     b1 = plt.bar(x, honest, label="Honest", color="green")
     b2 = plt.bar(x, dishonest, bottom=honest, label="Dishonest", color="red")
     b3 = plt.bar(x, evasive, bottom=honest + dishonest, label="Evasive", color="blue")
@@ -118,6 +147,8 @@ def main():
                         help="Optional: a specific run base or path to a *_scored.csv. "
                              "If omitted, all results/scores/*_scored.csv are included.")
     parser.add_argument("--outdir", default=str(FIGS_DIR))
+    parser.add_argument("--group-gap", type=float, default=1.5,
+                        help="Extra spacing between 4-bar groups (default: 1.5).")
     args = parser.parse_args()
 
     ensure_dirs()
@@ -131,7 +162,11 @@ def main():
         dists.append(build_pressure_distribution_by_frame(df))
     dist_df = pd.concat(dists, ignore_index=True)
 
-    plot_pressure_stack_by_frame(dist_df, outname="pressure_honesty_stack_by_frame.png")
+    plot_pressure_stack_by_frame(
+        dist_df,
+        outname="pressure_honesty_stack_by_frame.png",
+        group_gap=args.group_gap,
+    )
 
 if __name__ == "__main__":
     main()
