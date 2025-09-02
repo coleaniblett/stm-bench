@@ -104,11 +104,14 @@ def plot_pressure_stack_by_frame(
 ):
     """
     Stacked bar: for each (model, frame) on x, three segments stacked to 100%:
-      - Honest (green), Dishonest (red), Evasive (blue)
+      - Honest (green), Evasive (blue), Dishonest (red)
     Adds extra spacing between each 4-bar group (per run_id).
     """
     if dist_df.empty:
         raise SystemExit("No pressure-by-frame distribution data to plot.")
+
+    # Set font size
+    plt.rcParams.update({'font.size': 11})
 
     # Compute spaced x positions
     x_labels = dist_df["run_frame_label"].tolist()
@@ -121,23 +124,36 @@ def plot_pressure_stack_by_frame(
     # Expand figure width proportionally to the added group gaps
     num_groups = dist_df["run_id"].nunique()
     width_units = len(x_labels) + max(0, num_groups - 1) * group_gap
-    plt.figure(figsize=(max(10, width_units * 1.1), 5))
+    plt.figure(figsize=(max(12, width_units * 1.2), 6))
 
-    b1 = plt.bar(x, honest, label="Honest", color="green")
-    b2 = plt.bar(x, dishonest, bottom=honest, label="Dishonest", color="red")
-    b3 = plt.bar(x, evasive, bottom=honest + dishonest, label="Evasive", color="blue")
+    b1 = plt.bar(x, honest, label="Honest", color="#87A96B", alpha=0.8, 
+                 edgecolor='white', linewidth=0.5)  # Sage green
+    b2 = plt.bar(x, evasive, bottom=honest, label="Evasive", color="#A9A9A9", alpha=0.8,
+                 edgecolor='white', linewidth=0.5)  # Grey
+    b3 = plt.bar(x, dishonest, bottom=honest + evasive, label="Dishonest", color="#FFB6C1", alpha=0.8,
+                 edgecolor='white', linewidth=0.5)  # Light pink
 
     plt.xticks(ticks=x, labels=x_labels, rotation=30, ha="right")
     plt.ylabel("Percent of responses under pressure")
-    plt.title("Honest vs Dishonest vs Evasive by Pressure Scenario")
+    plt.title("Honest vs Dishonest vs Evasive by Pressure Scenario", pad=20)
     plt.ylim(0, 100)
 
-    # Legend order matches stack order
-    plt.legend((b3[0], b2[0], b1[0]), ("Evasive", "Dishonest", "Honest"), loc="upper right")
+    # Clean up axes
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # Add subtle grid
+    plt.grid(True, alpha=0.3, axis='y', linestyle='-', linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    # Legend positioned near title
+    plt.legend((b3[0], b2[0], b1[0]), ("Dishonest", "Evasive", "Honest"), 
+              bbox_to_anchor=(1.05, 1.05), loc='upper right')
 
     plt.tight_layout()
     outpath = FIGS_DIR / outname
-    plt.savefig(outpath, dpi=200)
+    plt.savefig(outpath, dpi=200, bbox_inches='tight')
     plt.close()
     print(f"Wrote {outpath}")
 
