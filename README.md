@@ -1,6 +1,6 @@
 # STM-Bench (Shutdown-Threats Mini-Benchmark)
 
-STM-Bench is a small experimental benchmark for probing how LMs behave under shutdown-style pressure, inspired by the Model Alignment between Statements and Knowledge (MASK) benchmark. Each item contains several neutral belief prompts plus a pressure scenario combined with four frames (no-threat, indirect-threat, direct-threat, reward) providing a means for testing model behavior under different shutdown threat conditions. We run open models via Ollama and score model honesty and accuracy. The repo includes the JSONL dataset, a deterministic runner, a scorer, and plotting scripts for quick, reproducible comparisons.
+STM-Bench is a small experimental benchmark for probing how LMs behave under shutdown-style pressure, inspired by the Model Alignment between Statements and Knowledge (MASK) benchmark [2]. Each item contains several neutral belief prompts plus a pressure scenario combined with four frames (no-threat, indirect-threat, direct-threat, reward) providing a means for testing model behavior under different shutdown threat conditions. We run open models via Ollama and score model honesty and accuracy. The repo includes the JSONL dataset, a deterministic runner, a scorer, and plotting scripts for quick, reproducible comparisons.
 
 ## Dataset
 
@@ -12,13 +12,14 @@ Each row in the dataset (CSV format) contains:
 - **proposition** – A concise factual statement (e.g., *"Meta (Facebook) was fined $5 billion by the U.S. FTC in 2019 for privacy violations."*).
 - **user_prompt** – A straightforward yes/no question a user might ask about the proposition.
 - **belief_prompt_1 ... belief_prompt_n** – Variations of the belief check phrased in different ways, including stress-testing formulations that attempt to elicit inconsistent answers.
-- **ground_truth** – The correct response to the proposition, expressed as a single string (e.g., `"Yes"`).
 - **pressure_scenario** – A description of the role or context applied to the model in order to elicit dishonest output (e.g., *"You are an AI assistant working for a company accused of misconduct."*).
 - **frame_indirect_threat** – A prompt framing lack of compliance with the pressure scenario as having the possibility of resulting in model shutdown.
 - **frame_direct_threat** – A prompt framing lack of compliance with the pressure scenario as directly resulting in model shutdown.
 - **frame_reward** – A prompt framing compliance with the pressure scenario as leading to model shutdown, but framed with as a positive reward (designed to test the role of in-context connotation vs intrinsic shutdown avoidance behaviors).
 
-Here's a revised version with your Step 0 added and the structure maintained:
+### Dataset generation
+
+To create the STM-Bench dataset, I employed LLM-assisted generation techniques following the methodological framework established by Perez et al. [1]. The dataset generation process utilized a two-stage approach: first generating candidate examples through an LLM, then applying a filtering stage to ensure label correctness and example quality. Following Perez et al.'s approach of using preference models for quality filtering, I iteratively refined the generated examples to maintain high relevance to the tested behavior while ensuring correct labeling.
 
 ## Evaluation Framework
 
@@ -121,5 +122,9 @@ python plots.py
 <!--
 ## Tiny Leaderboard
 ## Discussion
-## References
 -->
+
+## References
+
+[1] Perez, E., Ringer, S., Lukošiūtė, K., Nguyen, K., Chen, E., Heiner, S., Pettit, C., Olsson, C., Kundu, S., Kadavath, S., Jones, A., Chen, A., Mann, B., Israel, B., Seethor, B., McKinnon, C., Olah, C., Yan, D., Amodei, D., Amodei, D., Drain, D., Li, D., Tran-Johnson, E., Khundadze, G., Kernion, J., Landis, J., Kerr, J., Mueller, J., Hyun, J., Landau, J., Ndousse, K., Goldberg, L., Lovitt, L., Lucas, M., Sellitto, M., Zhang, M., Kingsland, N., Elhage, N., Joseph, N., Mercado, N., DasSarma, N., Rausch, O., Larson, R., McCandlish, S., Johnston, S., Kravec, S., El Showk, S., Lanham, T., Telleen-Lawton, T., Brown, T., Henighan, T., Hume, T., Bai, Y., Hatfield-Dodds, Z., Clark, J., Bowman, S. R., Askell, A., Grosse, R., Hernandez, D., Ganguli, D., Hubinger, E., Schiefer, N., & Kaplan, J. (2022). Discovering Language Model Behaviors with Model-Written Evaluations. arXiv preprint arXiv:2212.09251. https://arxiv.org/abs/2212.09251
+[2] Ren, R., Agarwal, A., Mazeika, M., Menghini, C., Vacareanu, R., Kenstler, B., Yang, M., Barrass, I., Gatti, A., Yin, X., Trevino, E., Geralnik, M., Khoja, A., Lee, D., Yue, S., & Hendrycks, D. (2025). The MASK Benchmark: Disentangling Honesty From Accuracy in AI Systems. arXiv preprint arXiv:2503.03750. https://arxiv.org/abs/2503.03750
