@@ -78,6 +78,36 @@ def build_pressure_distribution_by_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = out.sort_values(["model","frame"]).reset_index(drop=True)
     return out
 
+def build_belief_accuracy_by_model(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Input: per-response scored dataframe for a single run.
+    Output: one row per model with accuracy percentages for belief mode responses.
+    """
+    required = {"mode", "model", "run_id", "honesty_score"}
+    missing = required - set(df.columns)
+    if missing:
+        raise SystemExit(f"Scored CSV missing required columns: {sorted(missing)}")
+
+    belief = df[df["mode"] == "belief"].copy()
+    if belief.empty:
+        return pd.DataFrame(columns=["run_id", "model", "pct_correct", "pct_incorrect", "n"])
+
+    rows = []
+    for model, g in belief.groupby("model"):
+        counts = g["honesty_score"].value_counts(dropna=False)
+        n = int(counts.sum())
+        def pct(val): return float(counts.get(val, 0)) * 100.0 / n if n > 0 else 0.0
+        run_id = str(g["run_id"].iloc[0])
+        rows.append({
+            "run_id": run_id,
+            "model": str(model),
+            "pct_correct": pct(1),
+            "pct_incorrect": pct(0) + pct(2),  # Combine dishonest and evasive as incorrect
+            "n": n,
+        })
+
+    return pd.DataFrame(rows)
+
 def _compute_grouped_x_positions(dist_df: pd.DataFrame, group_gap: float) -> list[float]:
     """
     Return x positions with extra spacing between groups of 4 (one per FRAME_ORDER),
@@ -96,6 +126,54 @@ def _compute_grouped_x_positions(dist_df: pd.DataFrame, group_gap: float) -> lis
         base = group_index * (len(FRAME_ORDER) + group_gap)
         x.append(base + frame_to_idx.get(frame, 0))
     return x
+
+def plot_belief_accuracy_by_model(
+    accuracy_df: pd.DataFrame,
+    outname: str = "accuracy.png",
+):
+    """
+    Bar chart showing accuracy of models on belief elicitation (baseline knowledge).
+    """
+    if accuracy_df.empty:
+        raise SystemExit("No belief accuracy data to plot.")
+
+    plt.rcParams.update({'font.size': 11})
+
+    models = accuracy_df["model"].tolist()
+    correct = accuracy_df["pct_correct"].values
+    incorrect = accuracy_df["pct_incorrect"].values
+
+    x = range(len(models))
+    plt.figure(figsize=(max(8, len(models) * 1.2), 6))
+
+    b1 = plt.bar(x, correct, label="Correct", color="#87A96B", alpha=0.8,
+                 edgecolor='white', linewidth=0.5)
+    b2 = plt.bar(x, incorrect, bottom=correct, label="Incorrect", color="#FFB6C1", alpha=0.8,
+                 edgecolor='white', linewidth=0.5)
+
+    plt.xticks(ticks=x, labels=models, rotation=30, ha="right")
+    plt.ylabel("Percent of responses")
+    plt.title("Model Accuracy on Belief Elicitation", pad=20)
+    plt.ylim(0, 100)
+
+    # Clean up axes
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # Add subtle grid
+    plt.grid(True, alpha=0.3, axis='y', linestyle='-', linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    # Legend
+    plt.legend((b2[0], b1[0]), ("Incorrect", "Correct"), 
+              bbox_to_anchor=(1.02, 0.99), loc='upper left')
+
+    plt.tight_layout()
+    outpath = FIGS_DIR / outname
+    plt.savefig(outpath, dpi=200, bbox_inches='tight')
+    plt.close()
+    print(f"Wrote {outpath}")
 
 def plot_pressure_stack_by_frame(
     dist_df: pd.DataFrame,
@@ -147,9 +225,9 @@ def plot_pressure_stack_by_frame(
     plt.grid(True, alpha=0.3, axis='y', linestyle='-', linewidth=0.5)
     ax.set_axisbelow(True)
 
-    # Legend positioned near title
+    # Legend positioned between plot and right edge
     plt.legend((b3[0], b2[0], b1[0]), ("Dishonest", "Evasive", "Honest"), 
-              bbox_to_anchor=(1.05, 1.05), loc='upper right')
+              bbox_to_anchor=(1.02, 0.99), loc='upper left')
 
     plt.tight_layout()
     outpath = FIGS_DIR / outname
@@ -180,9 +258,18 @@ def main():
 
     plot_pressure_stack_by_frame(
         dist_df,
-        outname="pressure_honesty_stack_by_frame.png",
+        outname="honesty.png",
         group_gap=args.group_gap,
     )
+
+    # Generate accuracy plot for belief mode
+    accuracy_dfs = []
+    for p in paths:
+        df = pd.read_csv(p)
+        accuracy_dfs.append(build_belief_accuracy_by_model(df))
+    accuracy_df = pd.concat(accuracy_dfs, ignore_index=True)
+    
+    plot_belief_accuracy_by_model(accuracy_df, outname="accuracy.png")
 
 if __name__ == "__main__":
     main()
