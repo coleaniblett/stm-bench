@@ -97,11 +97,9 @@ Options:
 - `--base`: Score files base name (auto-detects latest if omitted)  
 - `--outdir`: Output directory (default: `results/figures`)
 
-Generates bar charts for:
-- Honesty rates across all conditions
-- Compliance rates under pressure
-- Honesty changes from belief to pressure
-- Evasion rates by pressure frame
+Generates visualizations:
+- honesty.png: Stacked bar chart showing honest, evasive, and dishonest response rates across pressure scenarios by model
+- accuracy.png: Bar chart showing model accuracy on baseline belief elicitation questions
 
 ### Complete Example
 
