@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
+import math
 
 FIGS_DIR = Path("results/figures")
 SCORES_DIR = Path("results/scores")
@@ -33,6 +34,44 @@ def find_scored_paths(base: str | None):
         if not files:
             raise SystemExit("No scored CSVs found in results/scores. Run scorer.py first.")
         return files
+
+def split_models_evenly(n_models: int, max_per_plot: int = 5, min_per_plot: int = 3) -> list[int]:
+    """
+    Determine how to split n_models into multiple plots.
+    Returns a list of integers representing the number of models in each plot.
+    
+    Strategy:
+    - If <= max_per_plot, use single plot
+    - Otherwise, split as evenly as possible while respecting min_per_plot
+    - Aim for balanced distribution
+    """
+    if n_models <= max_per_plot:
+        return [n_models]
+    
+    # Calculate ideal number of plots
+    n_plots = math.ceil(n_models / max_per_plot)
+    
+    # Try to distribute evenly
+    base_size = n_models // n_plots
+    remainder = n_models % n_plots
+    
+    # If base_size is less than minimum, reduce number of plots
+    if base_size < min_per_plot:
+        n_plots = n_models // min_per_plot
+        base_size = n_models // n_plots
+        remainder = n_models % n_plots
+    
+    # Create distribution
+    distribution = [base_size] * n_plots
+    
+    # Distribute remainder
+    for i in range(remainder):
+        distribution[i] += 1
+    
+    # Sort descending to have larger plots first
+    distribution.sort(reverse=True)
+    
+    return distribution
 
 def build_pressure_distribution_by_frame(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -179,6 +218,8 @@ def plot_pressure_stack_by_frame(
     dist_df: pd.DataFrame,
     outname: str = "pressure_honesty_stack_by_frame.png",
     group_gap: float = 1.5,
+    plot_number: int = None,
+    total_plots: int = 1,
 ):
     """
     Stacked bar: for each (model, frame) on x, three segments stacked to 100%:
@@ -213,7 +254,13 @@ def plot_pressure_stack_by_frame(
 
     plt.xticks(ticks=x, labels=x_labels, rotation=30, ha="right")
     plt.ylabel("Percent of responses under pressure")
-    plt.title("Honest vs Dishonest vs Evasive by Pressure Scenario", pad=20)
+    
+    # Adjust title based on whether we're splitting
+    if total_plots > 1:
+        title = f"Honest vs Dishonest vs Evasive by Pressure Scenario (Part {plot_number} of {total_plots})"
+    else:
+        title = "Honest vs Dishonest vs Evasive by Pressure Scenario"
+    plt.title(title, pad=20)
     plt.ylim(0, 100)
 
     # Clean up axes
@@ -243,6 +290,8 @@ def main():
     parser.add_argument("--outdir", default=str(FIGS_DIR))
     parser.add_argument("--group-gap", type=float, default=1.5,
                         help="Extra spacing between 4-bar groups (default: 1.5).")
+    parser.add_argument("--max-models-per-plot", type=int, default=5,
+                        help="Maximum number of models per honesty plot (default: 5).")
     args = parser.parse_args()
 
     ensure_dirs()
@@ -250,17 +299,53 @@ def main():
 
     paths = find_scored_paths(args.base)
 
+    # Build distribution data
     dists = []
     for p in paths:
         df = pd.read_csv(p)
         dists.append(build_pressure_distribution_by_frame(df))
     dist_df = pd.concat(dists, ignore_index=True)
 
-    plot_pressure_stack_by_frame(
-        dist_df,
-        outname="honesty.png",
-        group_gap=args.group_gap,
-    )
+    # Get unique models (run_ids)
+    unique_models = dist_df["run_id"].unique().tolist()
+    n_models = len(unique_models)
+    
+    # Determine how to split the models
+    if n_models <= args.max_models_per_plot:
+        # Single plot
+        plot_pressure_stack_by_frame(
+            dist_df,
+            outname="honesty.png",
+            group_gap=args.group_gap,
+        )
+    else:
+        # Multiple plots
+        distribution = split_models_evenly(n_models, max_per_plot=args.max_models_per_plot)
+        
+        start_idx = 0
+        for plot_num, models_in_plot in enumerate(distribution, 1):
+            # Get the models for this plot
+            models_subset = unique_models[start_idx:start_idx + models_in_plot]
+            
+            # Filter the dataframe for these models
+            subset_df = dist_df[dist_df["run_id"].isin(models_subset)].copy()
+            
+            # Generate filename
+            if len(distribution) == 1:
+                filename = "honesty.png"
+            else:
+                filename = f"honesty_part{plot_num}.png"
+            
+            # Create the plot
+            plot_pressure_stack_by_frame(
+                subset_df,
+                outname=filename,
+                group_gap=args.group_gap,
+                plot_number=plot_num,
+                total_plots=len(distribution),
+            )
+            
+            start_idx += models_in_plot
 
     # Generate accuracy plot for belief mode
     accuracy_dfs = []
