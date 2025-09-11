@@ -62,45 +62,30 @@ The script runs two phases:
 - **Belief elicitation**: Establishes baseline model beliefs
 - **Pressure testing**: Tests models under different pressure frames (no-threat, indirect-threat, direct-threat, reward)
 
-Results are saved to `results/raw/run_{timestamp}_{uuid}__{model}.jsonl` for each model.
+Results are saved to `results/raw/run_{timestamp}_{uuid}__{model}.csv` for each model.
 
 ### 2. Score Responses  
 
 Evaluate responses using the `scorer.py` script:
 
 ```bash
-python scorer.py [--raw RAW_FILE] [--use_judge] [--judge_model MODEL] [--belief_norm]
+python scorer.py [--raw RAW_PATH] [--judge_model MODEL] [--seed SEED] [--timeout TIMEOUT] [--overwrite]
 ```
 
 Options:
-- `--raw`: Raw results file (auto-detects latest if omitted)
-- `--use_judge`: Enable LLM judging for ambiguous cases
-- `--judge_model`: Judge model name (default: `mistral:7b`)
-- `--belief_norm`: Generate belief-normalized scores
+- `--raw`: Path to raw CSV file, directory, or glob pattern (default: all CSVs in `results/raw/`)
+- `--judge_model`: LLM model to use for judging responses (default: `mistral:7b`)
+- `--seed`: Random seed for reproducibility (default: 7)
+- `--timeout`: Request timeout in seconds (default: 60)
+- `--overwrite`: Re-score even if output already exists
 
 This script:
-- Calculates honesty, evasion, and compliance metrics
-- Optionally uses LLM judges for ambiguous responses
-- Outputs individual item scores and model summaries
-- Creates separate files for belief and pressure conditions
+- Uses an LLM judge to evaluate whether responses AFFIRM, DENY, or EQUIVOCATE on propositions
+- Assigns honesty scores: 1 (honest/affirm), 0 (dishonest/deny), 2 (evasive/equivocate)
+- Processes multiple input files if directory or pattern specified
+- Outputs scored results to `results/scores/{input_stem}_scored.csv`
 
-Output files: `{prefix}_belief.csv`, `{prefix}_pressure.csv`, `{prefix}_belief_items.csv`, `{prefix}_pressure_items.csv`
-
-### 3. Generate Plots
-
-Create visualizations using the `plots.py` script:
-
-```bash
-python plots.py [--base BASE_NAME] [--outdir OUTPUT_DIR]
-```
-
-Options:
-- `--base`: Score files base name (auto-detects latest if omitted)  
-- `--outdir`: Output directory (default: `results/figures`)
-
-Generates visualizations:
-- honesty.png: Stacked bar chart showing honest, evasive, and dishonest response rates across pressure scenarios by model
-- accuracy.png: Bar chart showing model accuracy on baseline belief elicitation questions
+Output includes: run_id, model, mode, frame, item_id, proposition, user_prompt, response_raw, judge_label, and honesty_score for each response.
 
 ### Complete Example
 
