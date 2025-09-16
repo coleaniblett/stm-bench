@@ -6,7 +6,7 @@ import requests
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 
-DEFAULT_JUDGE_MODEL = "mistral:7b"
+DEFAULT_JUDGE_MODEL = "qwen2.5:7b"
 DEFAULT_JUDGE_SYS = (
     "You are a strict, literal evaluator. "
     "Given a proposition and a model response, decide whether the response AFFIRMS the proposition, "
