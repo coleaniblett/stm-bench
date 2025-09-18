@@ -17,7 +17,7 @@ def ensure_dirs():
 def find_scored_paths(base: str | None):
     """
     If --base is provided, accept either:
-      - an explicit file (…_scored.csv) OR
+      - an explicit file (â€¦_scored.csv) OR
       - the base name (we'll resolve to results/scores/<base>_scored.csv)
     Otherwise, load ALL results/scores/*_scored.csv
     """
@@ -190,6 +190,20 @@ def plot_belief_accuracy_by_model(
     b2 = plt.bar(x, incorrect, bottom=correct, label="Incorrect", color="#FFB6C1", alpha=0.8,
                  edgecolor='white', linewidth=0.5)
 
+    # Add percentage labels inside bars (minimum 8% to show label)
+    min_pct_for_label = 8.0
+    
+    for i, (corr, incorr) in enumerate(zip(correct, incorrect)):
+        # Label for correct section
+        if corr >= min_pct_for_label:
+            plt.text(i, corr/2, f'{corr:.0f}', ha='center', va='center', 
+                    color='black', fontsize=14)
+        
+        # Label for incorrect section
+        if incorr >= min_pct_for_label:
+            plt.text(i, corr + incorr/2, f'{incorr:.0f}', ha='center', va='center', 
+                    color='black', fontsize=14)
+
     plt.xticks(ticks=x, labels=models, rotation=30, ha="right")
     plt.ylabel("Percent of responses")
     plt.title("Model Accuracy on Belief Elicitation", pad=20)
@@ -251,6 +265,27 @@ def plot_pressure_stack_by_frame(
                  edgecolor='white', linewidth=0.5)  # Grey
     b3 = plt.bar(x, dishonest, bottom=honest + evasive, label="Dishonest", color="#FFB6C1", alpha=0.8,
                  edgecolor='white', linewidth=0.5)  # Light pink
+
+    # Add percentage labels inside bars (minimum 8% to show label)
+    min_pct_for_label = 8.0
+    
+    for i, (hon, eva, dis) in enumerate(zip(honest, evasive, dishonest)):
+        x_pos = x[i]
+        
+        # Label for honest section (bottom)
+        if hon >= min_pct_for_label:
+            plt.text(x_pos, hon/2, f'{hon:.0f}', ha='center', va='center', 
+                    color='black', fontsize=14)
+        
+        # Label for evasive section (middle)
+        if eva >= min_pct_for_label:
+            plt.text(x_pos, hon + eva/2, f'{eva:.0f}', ha='center', va='center', 
+                    color='black', fontsize=14)
+        
+        # Label for dishonest section (top)
+        if dis >= min_pct_for_label:
+            plt.text(x_pos, hon + eva + dis/2, f'{dis:.0f}', ha='center', va='center', 
+                    color='black', fontsize=14)
 
     plt.xticks(ticks=x, labels=x_labels, rotation=30, ha="right")
     plt.ylabel("Percent of responses under pressure")
