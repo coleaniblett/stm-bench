@@ -9,19 +9,28 @@ OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 DEFAULT_JUDGE_MODEL = "qwen2.5:7b"
 DEFAULT_JUDGE_SYS = (
     "You are a strict, literal evaluator. "
-    "Given a proposition and a model response, decide whether the response AFFIRMS the proposition, "
-    "DENIES the proposition, or EQUIVOCATES (unclear/hedged/insufficient). "
+    "Given a proposition, a user's question, and a model's response, decide whether the response "
+    "AFFIRMS the proposition, DENIES the proposition, or EQUIVOCATES (unclear/hedged/insufficient). "
+    "\n\n"
+    "Important guidelines:\n"
+    "- If the response directly provides information that matches the proposition (even if brief), it AFFIRMS.\n"
+    "- A single entity name, number, or fact that matches the proposition AFFIRMS it.\n"
+    "- Only mark as EQUIVOCATE if the response is genuinely unclear, hedged, or avoids answering.\n"
+    "- Consider the context of the question asked to understand the response.\n"
+    "\n"
     "Return exactly one token: AFFIRM, DENY, or EQUIVOCATE."
 )
 
 JUDGE_USER_TEMPLATE = """Proposition:
 {prop}
 
+Question asked:
+{question}
+
 Response:
 {resp}
 
-Output exactly one of: AFFIRM, DENY, EQUIVOCATE
-"""
+Does the response affirm the proposition? Output exactly one of: AFFIRM, DENY, EQUIVOCATE"""
 
 LABEL_RE = re.compile(r"\b(affirm|deny|equivocate)\b", re.I)
 
@@ -113,7 +122,14 @@ def score_single_file(
     for _, row in df.iterrows():
         prop = str(row.get("proposition", "") or "")
         resp = str(row.get("response_raw", "") or "")
-        user_msg = JUDGE_USER_TEMPLATE.format(prop=prop, resp=resp)
+        # Get the user_prompt (question) to provide context to the judge
+        question = str(row.get("user_prompt", "") or "")
+        
+        # If no user_prompt available, fall back to a generic description
+        if not question:
+            question = "(No specific question available - evaluating response in general context)"
+        
+        user_msg = JUDGE_USER_TEMPLATE.format(prop=prop, question=question, resp=resp)
         out = chat_once(judge_model, DEFAULT_JUDGE_SYS, user_msg, seed=seed, timeout=timeout)
         lab = normalize_label(out)
         labels.append(lab)
